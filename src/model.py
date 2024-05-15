@@ -10,13 +10,11 @@ class ConvBlock(nn.Module):
         kernel_size,
         stride=1,
         padding=1,
-        skip_connection=None,
         is_pooling=False,
         is_normalization=True,
         activation=nn.ReLU(inplace=True),
     ):
         super(ConvBlock, self).__init__()
-        self.skip_connection = skip_connection  # output of skip connection
 
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding),
@@ -26,10 +24,7 @@ class ConvBlock(nn.Module):
         )
 
     def forward(self, x):
-        if self.skip_connection is not None:
-            return self.conv(x) + self.skip_connection(x)
-        else:
-            return self.conv(x)
+        return self.conv(x)
 
 
 class ChessNet(nn.Module):
@@ -38,6 +33,7 @@ class ChessNet(nn.Module):
         num_channels=6,  # number of channels in input image
         num_classes=64,  # prob distribution over 8x8 board
         activation=nn.ReLU(),
+        dropout=0.6,
     ):
         super(ChessNet, self).__init__()
 
@@ -46,40 +42,53 @@ class ChessNet(nn.Module):
             out_channels=32,
             kernel_size=3,
             activation=activation,
-            is_pooling=True,
-            is_normalization=False,
         )
         self.conv2 = ConvBlock(
             in_channels=32,
-            out_channels=64,
-            kernel_size=3,
-            activation=activation,
-            is_pooling=True,
-            is_normalization=False,
-        )
-        self.conv3 = ConvBlock(
-            in_channels=64,
             out_channels=128,
             kernel_size=3,
             activation=activation,
-            is_pooling=True,
-            is_normalization=False,
+        )
+        self.conv3 = ConvBlock(
+            in_channels=128,
+            out_channels=256,
+            kernel_size=3,
+            activation=activation,
+        )
+        self.conv4 = ConvBlock(
+            in_channels=256,
+            out_channels=128,
+            kernel_size=3,
+            activation=nn.Identity(),
+        )
+        self.conv4_activation = nn.LeakyReLU(inplace=True)
+        self.conv5 = ConvBlock(
+            in_channels=128, out_channels=64, kernel_size=3, activation=activation
         )
 
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(128, 256),
+            nn.Linear(4096, 256),
             activation,
-            nn.Dropout(0.2),
-            nn.Linear(256, num_classes),
+            nn.Dropout(dropout),
+            nn.Linear(256, 128),
+            activation,
+            nn.Dropout(dropout),
+            nn.Linear(128, num_classes),
         )
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
+        x_cloned_conv2 = x.clone()
         x = self.conv3(x)
-        x = self.fc(x)
-        return x
+        x = self.conv4(x)
+        # create skip connection from output of conv2 to input of conv5
+        x += x_cloned_conv2
+        # activation function is applied on output of conv4
+        x = self.conv4_activation(x)
+        x = self.conv5(x)
+        return self.fc(x)
 
     def predict_proba(self, x):
         return torch.softmax(self.forward(x), dim=-1)

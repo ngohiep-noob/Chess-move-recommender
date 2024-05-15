@@ -2,6 +2,9 @@ import chess
 import chess.pgn
 from chess.pgn import BaseVisitor
 import io
+import torch
+from typing import List, Tuple
+import pickle
 
 
 class Visitor(BaseVisitor):
@@ -23,3 +26,97 @@ def read_pgn(pgn):
     pgn = io.StringIO(pgn)
     moves, _ = chess.pgn.read_game(pgn, Visitor=Visitor)
     return moves
+
+
+def read_data_sample(path: str) -> List[Tuple[str, str, str]]:
+    # read list of tuples from pickle file
+    with open(path, "rb") as f:
+        data = pickle.load(f)
+
+    return data
+
+
+# encode board into 6 channel tensor
+# each channel represents a different type of piece
+# 0: empty square
+# 1: white pieces, 2: black pieces
+# 1st channel: pawns, 2nd channel: knights, 3rd channel: bishops
+# 4th channel: rooks, 5th channel: queens, 6th channel: kings
+def transform_board(board, mask_loc: str = None) -> torch.Tensor:
+    piece_map = {
+        "p": 1,
+        "n": 2,
+        "b": 3,
+        "r": 4,
+        "q": 5,
+        "k": 6,
+    }
+    board_tensor = torch.zeros(6, 8, 8)
+    for i in range(8):
+        for j in range(8):
+            piece = board.piece_at(chess.square(i, j))
+            if piece is not None:
+                color = 1 if piece.color == chess.WHITE else -1
+                piece_symbol = piece.symbol().lower()
+                board_tensor[piece_map[piece_symbol] - 1, i, j] = color
+
+    if mask_loc is not None:  # add new channels of mask to the board tensor
+        mask_tensor = torch.zeros(1, 8, 8)
+        # convert mask_loc san to square index
+        mask_square = chess.parse_square(mask_loc)
+        piece = board.piece_at(mask_square)
+        if piece is None:
+            raise ValueError(f"no piece at mask square {mask_loc}")
+        mask_tensor[0, mask_square % 8, mask_square // 8] = (
+            1 if piece.color == chess.WHITE else -1
+        )
+        board_tensor = torch.cat((board_tensor, mask_tensor), dim=0)
+
+    return board_tensor
+
+
+# transform piece distribution to tensor label
+# piece_distribution = {'e1': 0.5, 'd2': 0.2, ...}
+# piece_distribution ==> tensor(64)
+def piece_distribution_to_label(piece_distribution):
+    label = torch.zeros(64)
+    for i, piece in enumerate(piece_distribution):
+        idx = chess.parse_square(piece)
+        label[idx] = piece_distribution[piece]
+
+    return label
+
+
+def filter_by_piece(samples: List[Tuple[str, str, str, str]], piece: str):
+    return list(filter(lambda x: x[2].lower() == piece, samples))
+
+
+# group samples with the same board state, produce a probability distribution of moves, ingore the move
+def group_board(samples):
+    board_grouped = {}
+    # count the number of moves for each piece in each board state
+    for sample in samples:
+        _from, _to, board_fen = sample
+
+        board_position = board_fen.split(" ")[0]
+
+        if board_position not in board_grouped:
+            board_grouped[board_position] = {"total": 0}
+
+        if _from not in board_grouped[board_position]:
+            board_grouped[board_position][_from] = 0
+
+        board_grouped[board_position]["total"] += 1
+        board_grouped[board_position][_from] += 1
+    # convert the count to probability distribution
+    for board_position in board_grouped:
+        total = board_grouped[board_position]["total"]
+        for _from in board_grouped[board_position]:
+            if _from == "total":
+                continue
+            board_grouped[board_position][_from] /= total
+        del board_grouped[board_position]["total"]
+    # dict to list
+    board_grouped = list(board_grouped.items())
+
+    return board_grouped
