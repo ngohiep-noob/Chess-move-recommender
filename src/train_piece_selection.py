@@ -3,21 +3,21 @@ import torch
 import torch.nn as nn
 from utils import *
 from dataset import *
+from time import time
 
 # TRAINING SETUP
-EPOCHS = 50
+EPOCHS = 70
 LEARNING_RATE = 0.001
 BATCH_SIZE = 256
-LEAKY_SLOPE = 0.05
-DROPOUT = 0.5
+LEAKY_SLOPE = 0.07
+DROPOUT = 0.6
 
 if __name__ == "__main__":
     # load dataset
-    samples = read_data_sample("data/grouped_train_samples.pkl")
-    ds = ChessGroupedDataset(samples)
-    # ds = PieceSelectionDataset(samples)
+    samples = read_data_sample("data/train_above_1800.pkl")
+    ds = ChessDataset(samples)
     dl = torch.utils.data.DataLoader(ds, batch_size=BATCH_SIZE, shuffle=True)
-    print(f'Load data: {len(ds)} samples')
+    print(f"Load data: {len(ds)} samples")
 
     # load model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -32,6 +32,7 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     loss_history = []
+    start = time()
     # training loop
     for epoch in range(EPOCHS):
         model.train()
@@ -48,11 +49,13 @@ if __name__ == "__main__":
             if idx % 200 == 0:
                 loss_history.append(loss.item())
                 epoch_loss += loss.item()
-                print(f"batch {idx}, Loss: {loss.item()}")
-        print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {epoch_loss / len(dl)}")
+                elapsed = time() - start
+                print(
+                    f"Epoch {epoch+1}/{EPOCHS} | Batch {idx} | loss: {loss.item()} | elap: {elapsed:.2f}s"
+                )
 
     # save model
-    file_name = f'grouped_ce_leakyrelu{LEAKY_SLOPE}_{EPOCHS}epc_batchsize{BATCH_SIZE}'
+    file_name = f"ce_leakyrelu{LEAKY_SLOPE}_{EPOCHS}epc_batchsize{BATCH_SIZE}"
     torch.save(model.state_dict(), f"checkpoint/{file_name}.ckpt")
     print("Model saved")
 

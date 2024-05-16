@@ -25,7 +25,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = ChessNet(
         num_classes=64,
-        num_channels=6,
+        num_channels=7,
         dropout=DROPOUT,
         activation=nn.LeakyReLU(inplace=True, negative_slope=LEAKY_SLOPE),
     ).to(device)
