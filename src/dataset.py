@@ -7,10 +7,8 @@ from utils import *
 
 
 class ChessDataset(Dataset):
-    def __init__(
-        self, moves: List[Tuple[str, str, str, chess.Board]], mask_move: bool = False
-    ):
-        self.moves = moves
+    def __init__(self, moves: List[Tuple[str, str, str, str]], mask_move: bool = False):
+        self.moves = moves  # (from, to, piece, board_fen)
         self.mask_move = mask_move
 
     def __len__(self):
@@ -22,11 +20,13 @@ class ChessDataset(Dataset):
         x = (
             transform_board(board)
             if not self.mask_move
-            else transform_board(board, mask_loc=_to)
+            else transform_board(board, mask_loc=_from)
         )
         # label is one-hot encoded _from
         y = torch.zeros(64)
-        y[chess.parse_square(_from)] = 1
+        # convert _to name to index, igoring promotion(last letter)
+        _to = chess.parse_square(_to[:2])
+        y[_to] = 1
         # if play side is black, flip the board both two ways and the label
         if board.turn == chess.BLACK:
             x = x.flip(1).flip(2)

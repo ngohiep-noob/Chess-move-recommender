@@ -5,6 +5,7 @@ import io
 import torch
 from typing import List, Tuple
 import pickle
+from time import time
 
 
 class Visitor(BaseVisitor):
@@ -94,29 +95,72 @@ def filter_by_piece(samples: List[Tuple[str, str, str, str]], piece: str):
 # group samples with the same board state, produce a probability distribution of moves, ingore the move
 def group_board(samples):
     board_grouped = {}
+
     # count the number of moves for each piece in each board state
     for sample in samples:
-        _from, _to, board_fen = sample
-
+        _from, _to, piece, board_fen = sample
         board_position = board_fen.split(" ")[0]
 
         if board_position not in board_grouped:
+
             board_grouped[board_position] = {"total": 0}
 
-        if _from not in board_grouped[board_position]:
-            board_grouped[board_position][_from] = 0
+        for idx, subkey in enumerate(
+            [
+                _from
+                #   , _to
+            ]
+        ):
+            # if idx == 0: # specicial prefix to denote from or to
+            #     subkey = f"f{subkey}"
+            # else:
+            #     subkey = f"t{subkey}"
+            if subkey not in board_grouped[board_position]:
+                board_grouped[board_position][subkey] = 0
+            board_grouped[board_position][subkey] += 1
 
         board_grouped[board_position]["total"] += 1
-        board_grouped[board_position][_from] += 1
+
     # convert the count to probability distribution
     for board_position in board_grouped:
-        total = board_grouped[board_position]["total"]
-        for _from in board_grouped[board_position]:
-            if _from == "total":
-                continue
-            board_grouped[board_position][_from] /= total
-        del board_grouped[board_position]["total"]
-    # dict to list
-    board_grouped = list(board_grouped.items())
 
+        total = board_grouped[board_position]["total"]
+
+        for subkey in board_grouped[board_position]:
+            if subkey == "total":
+                continue
+            board_grouped[board_position][subkey] /= total
+
+        del board_grouped[board_position]["total"]
+
+    # dict to list
+
+    board_grouped = list(board_grouped.items())
     return board_grouped
+
+
+def training(model, dataloader, criterion, optimizer, device, num_epochs=10):
+    model.train()
+    train_loss = []
+    start = time()
+    for epoch in range(num_epochs):
+        running_loss = 0.0
+        for i, data in enumerate(dataloader):
+            inputs, labels = data
+            inputs, labels = inputs.to(device), labels.to(device)
+
+            optimizer.zero_grad()
+
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+            if i % 100 == 99:
+                elapsed = time() - start
+                print(
+                    f"epoch {epoch+1}/{num_epochs} | batch {i+1} | loss: {running_loss / 100} | elap: {elapsed:.2f}s"
+                )
+                train_loss.append(running_loss / 100)
+                running_loss = 0.0
+    return train_loss
