@@ -43,7 +43,9 @@ def read_data_sample(path: str) -> List[Tuple[str, str, str]]:
 # 1: white pieces, 2: black pieces
 # 1st channel: pawns, 2nd channel: knights, 3rd channel: bishops
 # 4th channel: rooks, 5th channel: queens, 6th channel: kings
-def transform_board(board, mask_loc: str = None) -> torch.Tensor:
+def transform_board(
+    board: chess.Board, mask_loc: str | int = None, add_legal_moves: bool = False
+) -> torch.Tensor:
     piece_map = {
         "p": 1,
         "n": 2,
@@ -51,26 +53,47 @@ def transform_board(board, mask_loc: str = None) -> torch.Tensor:
         "r": 4,
         "q": 5,
         "k": 6,
+        "P": 7,
+        "N": 8,
+        "B": 9,
+        "R": 10,
+        "Q": 11,
+        "K": 12,
     }
-    board_tensor = torch.zeros(6, 8, 8)
+    board_tensor = torch.zeros(12, 8, 8)
     for i in range(8):
         for j in range(8):
             piece = board.piece_at(chess.square(i, j))
             if piece is not None:
-                color = 1 if piece.color == chess.WHITE else -1
-                piece_symbol = piece.symbol().lower()
-                board_tensor[piece_map[piece_symbol] - 1, i, j] = color
+                piece_symbol = piece.symbol()
+                board_tensor[piece_map[piece_symbol] - 1, i, j] = 1
+
+    if add_legal_moves:  # add new channels of legal moves to the board tensor
+        legal_moves = board.legal_moves
+        legal_move_channel = torch.zeros(1, 8, 8)
+        for move in legal_moves:
+            to_square = move.to_square
+            legal_move_channel[0, to_square % 8, to_square // 8] = 1
+            # check if the move is a capture
+            if board.is_capture(move):
+                legal_move_channel[0, to_square % 8, to_square // 8] *= 2
+        board_tensor = torch.cat((board_tensor, legal_move_channel), dim=0)
 
     if mask_loc is not None:  # add new channels of mask to the board tensor
         mask_tensor = torch.zeros(1, 8, 8)
         # convert mask_loc san to square index
-        mask_square = chess.parse_square(mask_loc)
+        assert (
+            mask_loc is not None or type(mask_loc) is int or type(mask_loc) is str
+        ), "mask_loc must be a string(square notation) or int(index)"
+        if type(mask_loc) == "str":
+            mask_square = chess.parse_square(mask_loc)
+        else:
+            mask_square = mask_loc
+
         piece = board.piece_at(mask_square)
         if piece is None:
             raise ValueError(f"no piece at mask square {mask_loc}")
-        mask_tensor[0, mask_square % 8, mask_square // 8] = (
-            1 if piece.color == chess.WHITE else -1
-        )
+        mask_tensor[0, mask_square % 8, mask_square // 8] = 1
         board_tensor = torch.cat((board_tensor, mask_tensor), dim=0)
 
     return board_tensor
@@ -158,8 +181,10 @@ def training(model, dataloader, criterion, optimizer, device, num_epochs=10):
             running_loss += loss.item()
             if i % 100 == 99:
                 elapsed = time() - start
+                # number of batches per epoch
+
                 print(
-                    f"epoch {epoch+1}/{num_epochs} | batch {i+1} | loss: {running_loss / 100} | elap: {elapsed:.2f}s"
+                    f"epoch {epoch+1}/{num_epochs} | batch {i+1}/{len(dataloader)} | loss: {running_loss / 100} | elap: {elapsed:.2f}s"
                 )
                 train_loss.append(running_loss / 100)
                 running_loss = 0.0

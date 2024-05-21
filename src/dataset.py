@@ -7,20 +7,28 @@ from utils import *
 
 
 class ChessDataset(Dataset):
-    def __init__(self, moves: List[Tuple[str, str, str, str]], mask_move: bool = False):
-        self.moves = moves  # (from, to, piece, board_fen)
+    def __init__(
+        self,
+        moves: List[Tuple[str, str, str, str]],
+        mask_move: bool = False,
+        add_legal_moves: bool = False,
+    ):
+        self.moves = moves  # (from, to, piece, turn, castling_rights, board_fen)
         self.mask_move = mask_move
+        self.add_legal_moves = add_legal_moves  # encode legal moves into board tensor
 
     def __len__(self):
         return len(self.moves)
 
     def __getitem__(self, idx):
-        _from, _to, piece, board_fen = self.moves[idx]
-        board = chess.Board(board_fen)
-        x = (
-            transform_board(board)
-            if not self.mask_move
-            else transform_board(board, mask_loc=_from)
+        _from, _to, piece, turn, castling_rights, board_fen = self.moves[idx]
+        fen = board_fen + " " + turn + " " + castling_rights + " - 0 1"
+        board = chess.Board(fen)
+        # feature is the board tensor
+        x = transform_board(
+            board,
+            mask_loc=_from if self.mask_move else None,
+            add_legal_moves=self.add_legal_moves,
         )
         # label is one-hot encoded _from
         y = torch.zeros(64)
