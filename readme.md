@@ -18,7 +18,7 @@ Relied on the suggestion of the most played move in the dataset, the system can 
 
 The model takes as input the current board position and outputs the move consisting of two parts: _which piece should be selected to move_ and _which square it should be moved to_.
 
-![Computational graph](docs\image1.png)
+![Computational graph](docs/image1.png)
 
 We use two different approaches for the recommendation task:
 
