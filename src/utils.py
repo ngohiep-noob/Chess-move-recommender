@@ -162,12 +162,23 @@ def group_board(samples):
     return board_grouped
 
 
+# get the move from argmax of the predicted distribution
+def argmax_move(batch: torch.Tensor):
+    argmax_idx = torch.argmax(batch, dim=1)
+    pred_y = torch.zeros_like(batch)
+    pred_y[torch.arange(batch.shape[0]), argmax_idx] = 1
+
+    return pred_y
+
+
 def training(model, dataloader, criterion, optimizer, device, num_epochs=10):
     model.train()
     train_loss = []
     start = time()
     for epoch in range(num_epochs):
         running_loss = 0.0
+        total = 0
+        correct = 0
         for i, data in enumerate(dataloader):
             inputs, labels = data
             inputs, labels = inputs.to(device), labels.to(device)
@@ -175,6 +186,9 @@ def training(model, dataloader, criterion, optimizer, device, num_epochs=10):
             optimizer.zero_grad()
 
             outputs = model(inputs)
+            total += labels.size(0)
+            pred_y = argmax_move(outputs)
+            correct += (pred_y == labels).all(dim=1).sum().item()
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -182,10 +196,13 @@ def training(model, dataloader, criterion, optimizer, device, num_epochs=10):
             if i % 100 == 99:
                 elapsed = time() - start
                 # number of batches per epoch
+                log = f"epoch {epoch+1}/{num_epochs} \
+                | batch {i+1}/{len(dataloader)} \
+                | loss: {running_loss / 100} \
+                | elap: {elapsed:.2f}s \
+                | acc: {(correct/total):.2f}"
 
-                print(
-                    f"epoch {epoch+1}/{num_epochs} | batch {i+1}/{len(dataloader)} | loss: {running_loss / 100} | elap: {elapsed:.2f}s"
-                )
+                print(log)
                 train_loss.append(running_loss / 100)
                 running_loss = 0.0
     return train_loss
